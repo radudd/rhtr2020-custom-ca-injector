@@ -1,4 +1,5 @@
-## About
+
+## About
 
 This purpose of this demo is to show-case the functionality of the custom-ca-injector[https://github.com/radudd/custom-ca-injector].
 
@@ -86,8 +87,7 @@ Then let's deploy the second app - which uses no injection, nor annotation
 oc apply -f deployments/example-app-1
 ----
 
-
-## Test 
+## Test
 
 Let's first get a token for the user which have the required role to access `/test/user` endpoint.
 
