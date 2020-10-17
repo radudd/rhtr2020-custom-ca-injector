@@ -56,7 +56,7 @@ Check if the injector was properly deployed
 oc logs -f `oc get pod -l app=custom-ca-injector --no-headers -o custom-columns=":metadata.name"`
 ----
 
-## Preparing application deployment
+## Preparing applications deployment
 
 ----
 oc new-project custom-ca-injector-test
@@ -73,7 +73,7 @@ As a prerequisite, we need to create a configmap containing the list of trusted 
 oc apply -f deplyoments/custom-ca-bundle.yaml
 ----
 
-## Deploying APP1
+## Deploying applications
 
 First let's deploy the app which has configured the annotation to append the custom-ca PEM the JKS to its pods.
 
