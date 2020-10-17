@@ -1,0 +1,117 @@
+## About
+
+This purpose of this demo is to show-case the functionality of the custom-ca-injector[https://github.com/radudd/custom-ca-injector].
+
+We will install this Mutating Webhook into the custom-ca-injector namespace and we will then test its functionality using two Spring Boot Applications: one annotated to use the custom-ca-injector, the other not.
+Both Spring Boot applications have have their resources protected by Keycloak. They are configured in the following way:
+
+* `/test/anonymus` - accessible by 
+* `/test/user`     - 
+
+Keycloak is deployed also in OpenShift, it's accessible by SSL only and its SSL certificate are signed by custom CA.
+
+This demo will demonstrate the proper communication between the application configured to use the custom-ca-injector Mutating Webhook for adding the Keycloak signing custom CA certificate to its JKS truststore with Keycloak. The other application, which will use the system provided JKS trustore obviously will not respond properly to the requests because of SSL errors. 
+
+Credits for configuring Keycloak and the Spring boot code: https://medium.com/devops-dudes/securing-spring-boot-rest-apis-with-keycloak-1d760b2004e
+
+## Design 
+
+## Installing Custom-CA-Injector
+
+### About
+
+Details: https://github.com/radudd/custom-ca-injector
+
+This Kubernetes MutatingWebhook provides a the possibility to append custom CA certificates to the pod's trusted CA config. You can inject your custom CA to both the Pod's PEM or JKS truststore.
+The only prerequisite is to have a configMap containing your list of your custom CA  certicicates in PEM format in the same project where you want to inject it to the pods.  
+Then you can define by pod annotations to configure which trustore you want to inject(PEM or JKS), the paths on the containers where the truststore should be stored, the name of the configmap containing the custom CA.
+
+### Deployment 
+
+First create the namespace where you want to deploy the injector application
+
+----
+oc new-project custom-ca-injector
+----
+
+For OpenShift, the certificates of the Injector will be created and signed by the OpenShift Service CA signer.
+This will be achieved by adding this specific annotation `service.beta.openshift.io/serving-cert-secret-name: injector-ssl-certs` to the service definition. After reading this annototion, OpenShift API will generate a TLS secret with the name *ca-injector* . This secret will be mounted afterwards to the injector pod in the deployment definition.
+
+Then deploy injector's manifests
+
+----
+oc apply -f deployments/injector
+----
+
+After this configure the truststore to be used when calling the webhook. Use the following script
+
+----
+./scripts/configure-ssl.sh
+----
+
+Check if the injector was properly deployed
+
+----
+oc logs -f `oc get pod -l app=custom-ca-injector --no-headers -o custom-columns=":metadata.name"`
+----
+
+## Preparing application deployment
+
+----
+oc new-project custom-ca-injector-test
+----
+
+Then label the namespace:
+----
+oc label namespace custom-ca-injector-test inject=custom-pki
+----
+
+As a prerequisite, we need to create a configmap containing the list of trusted CAs in PEM format. This configmap should contain the additional custom CA certificates that would need to be added additionally to the already trusted ones. The key in the configMap where the CA list is stored should be called *ca-bundle.crt*
+
+----
+oc apply -f deplyoments/custom-ca-bundle.yaml
+----
+
+## Deploying APP1
+
+First let's deploy the app which has configured the annotation to append the custom-ca PEM the JKS to its pods.
+
+----
+oc apply -f deployments/example-app-1
+----
+
+Then let's deploy the second app - which uses no injection, nor annotation
+
+----
+oc apply -f deployments/example-app-1
+----
+
+
+## Test 
+
+Let's first get a token for the user which have the required role to access `/test/user` endpoint.
+
+----
+TOKEN=`curl --silent -X POST https://keycloak-rhtr2020-keycloak.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
+ --data-urlencode 'grant_type=password' \
+ --data-urlencode 'client_id=spring' \
+ --data-urlencode 'client_secret=***' \
+ --data-urlencode 'username=***' \
+ --data-urlencode 'password=***' | jq .access_token`
+----
+
+Then let's let's call the `/test/user` for app-1
+
+----
+curl -I -X GET 'http://hello-spring-app-1.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN"
+----
+
+We should get a response and a 200 status. Check then the logs of the application - everything should look fine
+
+Now, let's try a call to the second app-2
+
+----
+curl -I -X GET 'http://hello-spring-app-2.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN"
+----
+
+We will get a 500 error...  Checking the logs we will notice that this is related to SSL errors for communication between the application and Keycloak.
