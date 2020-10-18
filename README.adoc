@@ -3,23 +3,25 @@
 
 This purpose of this demo is to show-case the functionality of the custom-ca-injector[https://github.com/radudd/custom-ca-injector].
 
-We will install this Mutating Webhook into the custom-ca-injector namespace and we will then test its functionality using two Spring Boot Applications: one annotated to use the custom-ca-injector, the other not.
-Both Spring Boot applications have have their resources protected by Keycloak. They are configured in the following way:
+We will install this Mutating Webhook into the custom-ca-injector namespace and we will then test its functionality by deploying two Spring Boot Applications: one annotated to use the custom-ca-injector, the other not.
+Both Spring Boot applications have have their endpoints protected by Keycloak. They are configured in the following way:
 
-* `/test/anonymus` - accessible by 
-* `/test/user`     - 
+* `/test/anonymus` - accessible by anyone
+* `/test/user`     - accessible by any user with app-user role in Keycloak
 
-Keycloak is deployed also in OpenShift, it's accessible by SSL only and its SSL certificate are signed by custom CA.
+Keycloak is accessible only by SSL and its certificate are signed by custom CA.
 
-This demo will demonstrate the proper communication between the application configured to use the custom-ca-injector Mutating Webhook for adding the Keycloak signing custom CA certificate to its JKS truststore with Keycloak. The other application, which will use the system provided JKS trustore obviously will not respond properly to the requests because of SSL errors. 
+This demo will demonstrate the proper communication between the application configured to use the custom-ca-injector Mutating Webhook with Keycloak. The other application, which will use the system provided JKS trustore obviously will not respond properly to the requests because of SSL errors when trying to reach RH-SSO. 
 
-Credits for configuring Keycloak and the Spring boot code: https://medium.com/devops-dudes/securing-spring-boot-rest-apis-with-keycloak-1d760b2004e
+To see some details about configuring the SSL certificates for RH-SSO with the custom CA, please check CA folder.
+
+Reference for configuring Keycloak and the Spring boot code: https://medium.com/devops-dudes/securing-spring-boot-rest-apis-with-keycloak-1d760b2004e
 
 ## Design 
 
-## Installing Custom-CA-Injector
+## Installing Custom-CA-Injector
 
-### About
+### About
 
 Details: https://github.com/radudd/custom-ca-injector
 
@@ -70,7 +72,7 @@ oc label namespace custom-ca-injector-test inject=custom-pki
 As a prerequisite, we need to create a configmap containing the list of trusted CAs in PEM format. This configmap should contain the additional custom CA certificates that would need to be added additionally to the already trusted ones. The key in the configMap where the CA list is stored should be called *ca-bundle.crt*
 
 ----
-oc apply -f deplyoments/custom-ca-bundle.yaml
+oc apply -f deployments/custom-ca-bundle.yaml
 ----
 
 ## Deploying applications
@@ -78,13 +80,13 @@ oc apply -f deplyoments/custom-ca-bundle.yaml
 First let's deploy the app which has configured the annotation to append the custom-ca PEM the JKS to its pods.
 
 ----
-oc apply -f deployments/example-app-1
+oc apply -f deployments/app-1-inject
 ----
 
 Then let's deploy the second app - which uses no injection, nor annotation
 
 ----
-oc apply -f deployments/example-app-1
+oc apply -f deployments/app-2-no-inject
 ----
 
 ## Test
@@ -92,18 +94,25 @@ oc apply -f deployments/example-app-1
 Let's first get a token for the user which have the required role to access `/test/user` endpoint.
 
 ----
-TOKEN=`curl --silent -X POST https://keycloak-rhtr2020-keycloak.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
+TOKEN1=`curl --cacert CA/rootCA.crt --silent -X POST https://sso.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
  --data-urlencode 'grant_type=password' \
- --data-urlencode 'client_id=spring' \
- --data-urlencode 'client_secret=***' \
- --data-urlencode 'username=***' \
- --data-urlencode 'password=***' | jq .access_token`
+ --data-urlencode 'client_id=app-1' \
+ --data-urlencode 'username=demo-user' \
+ --data-urlencode 'password=***' | jq .access_token| tr -d '"'`
+----
+
+----
+TOKEN2=`curl --cacert CA/rootCA.crt --silent -X POST https://sso.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
+ --data-urlencode 'grant_type=password' \
+ --data-urlencode 'client_id=app-2' \
+ --data-urlencode 'username=demo-user' \
+ --data-urlencode 'password=***' | jq .access_token| tr -d '"'`
 ----
 
 Then let's let's call the `/test/user` for app-1
 
 ----
-curl -I -X GET 'http://hello-spring-app-1.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN"
+curl  -X GET 'https://app-1.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN1"
 ----
 
 We should get a response and a 200 status. Check then the logs of the application - everything should look fine
@@ -111,7 +120,7 @@ We should get a response and a 200 status. Check then the logs of the applicatio
 Now, let's try a call to the second app-2
 
 ----
-curl -I -X GET 'http://hello-spring-app-2.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN"
+curl  -X GET 'https://app-2.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN2"
 ----
 
 We will get a 500 error...  Checking the logs we will notice that this is related to SSL errors for communication between the application and Keycloak.
