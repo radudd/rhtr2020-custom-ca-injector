@@ -17,8 +17,6 @@ To see some details about configuring the SSL certificates for RH-SSO with the c
 
 Reference for configuring Keycloak and the Spring boot code: https://medium.com/devops-dudes/securing-spring-boot-rest-apis-with-keycloak-1d760b2004e
 
-## Design 
-
 image::design.png[]
 
 ## Check RH-SSO certificate
