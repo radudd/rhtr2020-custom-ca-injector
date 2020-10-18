@@ -4,12 +4,12 @@
 This purpose of this demo is to show-case the functionality of the custom-ca-injector[https://github.com/radudd/custom-ca-injector].
 
 We will install this Mutating Webhook into the custom-ca-injector namespace and we will then test its functionality by deploying two Spring Boot Applications: one annotated to use the custom-ca-injector, the other not.
-Both Spring Boot applications have have their endpoints protected by Keycloak. They are configured in the following way:
+Both Spring Boot applications have have their endpoints protected by Red Hat SSO. They are configured in the following way:
 
 * `/test/anonymus` - accessible by anyone
 * `/test/user`     - accessible by any user with app-user role in Keycloak
 
-Keycloak is accessible only by SSL and its certificate are signed by custom CA.
+Red Hat SSO is accessible only by SSL and its certificate are signed by custom CA.
 
 This demo will demonstrate the proper communication between the application configured to use the custom-ca-injector Mutating Webhook with Keycloak. The other application, which will use the system provided JKS trustore obviously will not respond properly to the requests because of SSL errors when trying to reach RH-SSO. 
 
@@ -18,6 +18,24 @@ To see some details about configuring the SSL certificates for RH-SSO with the c
 Reference for configuring Keycloak and the Spring boot code: https://medium.com/devops-dudes/securing-spring-boot-rest-apis-with-keycloak-1d760b2004e
 
 ## Design 
+
+image::design.png[]
+
+## Check RH-SSO certificate
+
+As mentioned before, Red Hat SSO SSL certificates are signed by a customCA. The certificate of this CA can be found in `CA` folder, while a configmap for deploying this trustore as source for the Mutating Webhook is present at `deployment/custom-ca-bunlde.yaml` 
+
+In order to verify the certificate and check the details (issuer)
+
+----
+openssl x509 -in CA/rootCA.crt -text -noout
+----
+
+Then confirm the issuer is the same while checking the certificate of the Red Hat SSO URL: https://sso.apps.ocp.bdmsky.net
+
+----
+openssl s_client -showcerts -servername sso.apps.ocp.bdmsky.net -connect sso.apps.ocp.bdmsky.net:443 </dev/null
+----
 
 ## Installing Custom-CA-Injector
 
@@ -28,6 +46,7 @@ Details: https://github.com/radudd/custom-ca-injector
 This Kubernetes MutatingWebhook provides a the possibility to append custom CA certificates to the pod's trusted CA config. You can inject your custom CA to both the Pod's PEM or JKS truststore.
 The only prerequisite is to have a configMap containing your list of your custom CA  certicicates in PEM format in the same project where you want to inject it to the pods.  
 Then you can define by pod annotations to configure which trustore you want to inject(PEM or JKS), the paths on the containers where the truststore should be stored, the name of the configmap containing the custom CA.
+
 
 ### Deployment 
 
@@ -94,15 +113,7 @@ oc apply -f deployments/app-2-no-inject
 Let's first get a token for the user which have the required role to access `/test/user` endpoint.
 
 ----
-TOKEN1=`curl --cacert CA/rootCA.crt --silent -X POST https://sso.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
- --data-urlencode 'grant_type=password' \
- --data-urlencode 'client_id=app-1' \
- --data-urlencode 'username=demo-user' \
- --data-urlencode 'password=***' | jq .access_token| tr -d '"'`
-----
-
-----
-TOKEN2=`curl --cacert CA/rootCA.crt --silent -X POST https://sso.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
+TOKEN=`curl --cacert CA/rootCA.crt --silent -X POST https://sso.apps.ocp.bdmsky.net/auth/realms/rhtr/protocol/openid-connect/token  --header 'Content-Type: application/x-www-form-urlencoded' \
  --data-urlencode 'grant_type=password' \
  --data-urlencode 'client_id=app-2' \
  --data-urlencode 'username=demo-user' \
@@ -112,7 +123,7 @@ TOKEN2=`curl --cacert CA/rootCA.crt --silent -X POST https://sso.apps.ocp.bdmsky
 Then let's let's call the `/test/user` for app-1
 
 ----
-curl  -X GET 'https://app-1.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN1"
+curl  -X GET 'https://app-1.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN"
 ----
 
 We should get a response and a 200 status. Check then the logs of the application - everything should look fine
@@ -120,7 +131,7 @@ We should get a response and a 200 status. Check then the logs of the applicatio
 Now, let's try a call to the second app-2
 
 ----
-curl  -X GET 'https://app-2.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN2"
+curl  -X GET 'https://app-2.apps.ocp.bdmsky.net/test/user' --header "Authorization: bearer $TOKEN"
 ----
 
 We will get a 500 error...  Checking the logs we will notice that this is related to SSL errors for communication between the application and Keycloak.
