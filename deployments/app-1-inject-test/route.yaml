@@ -1,0 +1,14 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: app-11
+spec:
+  host: app-11.apps.ocp.bdmsky.net
+  to:
+    kind: Service
+    name: app-11
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge

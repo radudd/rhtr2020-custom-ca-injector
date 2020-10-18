@@ -1,0 +1,44 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: app-11
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-11
+  template:
+    metadata:
+      labels:
+        app: app-11
+    spec:
+      containers:
+        - name: app
+          image: 'quay.io/radudd/hello-spring:latest'
+          command:
+            - sh
+            - '-c'
+            - >-
+              java
+              -Djavax.net.ssl.trustStore=/etc/pki/ca-trust/extracted/java/cacerts
+              -Djavax.net.ssl.trustStorePassword=changeit
+              -jar /app.jar
+          env:
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: /config/
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: jks
+              mountPath: /etc/pki/ca-trust/extracted/java
+      volumes:
+        - name: config
+          configMap:
+            name: app-1-config
+        - name: jks
+          configMap:
+            name: jks

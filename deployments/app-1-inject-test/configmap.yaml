@@ -1,0 +1,13 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: app-1-config
+data:
+  application.yaml: |-
+    keycloak:
+      realm: rhtr
+      auth-server-url: https://sso.apps.ocp.bdmsky.net/auth
+      ssl-required: external
+      resource: app-1
+      use-resource-role-mappings: true
+      bearer-only: true

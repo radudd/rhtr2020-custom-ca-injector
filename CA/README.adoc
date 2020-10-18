@@ -1,0 +1,32 @@
+Reference: https://gist.github.com/fntlnz/cf14feb5a46b2eda428e000157447309
+
+
+## CA
+
+----
+openssl genrsa -des3 -out rootCA.key 4096
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 1024 -out rootCA.crt
+----
+
+## Certificate
+
+----
+openssl genrsa -out sso.apps.ocp.bdmsky.net.key 2048
+openssl req -new -sha256 -key sso.apps.ocp.bdmsky.net.key -subj "/C=CH/ST=ZH/O=bdmsky.net/CN=sso.apps.ocp.bdmsky.net" -out sso.apps.ocp.bdmsky.net.csr
+openssl x509 -req -in sso.apps.ocp.bdmsky.net.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out sso.apps.ocp.bdmsky.net.crt -days 500 -sha256
+----
+
+
+## Create OCP secret
+
+----
+oc create secret tls sso-bdmsky-x509 --cert=sso.apps.ocp.bdmsky.net.crt --key=sso.apps.ocp.bdmsky.net.key -n rhtr2020-keycloak
+----
+
+## Patch SSO 
+
+----
+oc edit -n rhtr2020-keycloak dc/sso
+----
+
+And update the secretName for the `sso-x509-https-volume` at the following path `/spec/template/volumes`  - `sso-bdmsky-x509`
